@@ -1,5 +1,9 @@
-// import type { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+import Hash from '@ioc:Adonis/Core/Hash'
+import type { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+import Session from 'App/Models/Session'
 import User from 'App/Models/User'
+import SignupValidator from 'App/Validators/Auth/SignupValidator'
+import { v4 as uuidv4 } from 'uuid'
 
 export default class AuthController {
   public async index({ response }) {
@@ -15,9 +19,10 @@ export default class AuthController {
    * @param {Request} ctx.request
    * @param {Response} ctx.response
    */
-  public async signup({ request, response }) {
+  public async signup({ request, response }: HttpContextContract) {
     try {
-      const { username, password, email } = request.all()
+      const validatedBody = await request.validate(SignupValidator);
+      const { username, password, email } = validatedBody
 
       return await User.create({
         username,
@@ -25,28 +30,39 @@ export default class AuthController {
         password
       })
     } catch (error) {
-      console.log(error)
-      response.send('Credentials missing')
+      console.log(...error.messages.errors)
+      response.status(400).send('Falha no registro.')
     }
   }
 
-  //   /**
-  //  * Do login.
-  //  * POST auth/login
-  //  *
-  //  * @param {object} ctx
-  //  * @param {Request} ctx.request
-  //  * @param {Response} ctx.response
-  //  */
-  //   public async login({ request, response, auth }) {
-  //     const { user, password } : { user: string , password: string } = request.post();
+  /**
+ * Do login.
+ * POST auth/login
+ *
+ * @param {object} ctx
+ * @param {Request} ctx.request
+ * @param {Response} ctx.response
+ */
+  public async signin({ request, response }) {
+    const { username, password }: { username: string, password: string } = request.all();
 
-  //     const token: any = await auth.authenticator('jwt').attempt(user, password);
+    try {
+      const userDB = await User.query()
+        .where('username', username)
+        .firstOrFail()
+      if (!Hash.verify(userDB.password, password)) throw new Error()
 
-  //     if (token) {
-  //       return response.send(token);
-  //     } else {
-  //       throw new HttpException('Credenciais inválidas', 400);
-  //     }
-  //   }
+      const token = uuidv4()
+
+      await Session.create({
+        token,
+        user_id: userDB.id
+      })
+
+      response.send({ token })
+    } catch (error) {
+      console.log(error)
+      response.status(400).send('Falha na autenticação.')
+    }
+  }
 }
